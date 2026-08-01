@@ -1,16 +1,28 @@
 # News Research Agent
 
-An AI agent that researches a topic across the live web, reflects on whether it has enough information, writes a structured, sourced report, and generates a cover image — built to learn agentic AI development end-to-end, then deployed to Azure.
+> A LangGraph research agent that searches the live web, reflects on whether it has enough information before writing, produces a Pydantic-validated structured report, and generates a cover image — containerized and deployed to Azure.
 
-## What it does
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](https://www.python.org)
+[![LangGraph](https://img.shields.io/badge/Agent-LangGraph-1C3C3C)](https://www.langchain.com/langgraph)
+[![Groq](https://img.shields.io/badge/LLM-Groq%20Llama%203.3%2070B-F55036?logo=groq)](https://groq.com)
+[![Tavily](https://img.shields.io/badge/Search-Tavily-6E56CF)](https://tavily.com)
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/UI-React%20%2B%20Vite-61DAFB?logo=react)](https://react.dev)
+[![Docker](https://img.shields.io/badge/Container-Docker-2496ED?logo=docker)](https://www.docker.com)
+[![Azure](https://img.shields.io/badge/Cloud-Azure-0078D4?logo=microsoftazure)](https://azure.microsoft.com)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Give it a topic (e.g. "latest developments in AI coding agents"), and it will:
+A naive "search then summarize" script can't tell a thin result set from a solid one — it just writes whatever it finds. This agent adds a genuine decision point: after searching, an LLM call judges whether the results are actually sufficient, and loops back to search again (capped, so it can't run away) if they aren't. That reflection step, plus forcing the final answer into a validated schema instead of free text, is what separates an "agent" from a script that calls an API twice.
 
-1. Search the web (Tavily)
-2. Judge whether the results are sufficient to write a good report — if not, search again (up to 3 rounds)
-3. Write a structured report: headline, key developments, sources (validated with Pydantic)
-4. Generate a cover image for the report
-5. Return it all through a FastAPI endpoint, rendered by a React frontend
+| Pattern | Implementation |
+|---|---|
+| Tool calling | LLM requests a Tavily search; the graph executes it and returns results — the model never runs code itself |
+| Reflection loop | A second LLM call judges sufficiency (`SUFFICIENT` / `MORE`) and conditionally routes back to search, capped at `MAX_SEARCHES` |
+| Structured output | `llm.with_structured_output(ResearchReport)` — a Pydantic model, not a parsed paragraph |
+| Multimodal generation | Report's `image_prompt` field feeds a separate image-generation call, wired in as its own graph node |
+| Provider-agnostic design | LLM calls isolated behind a single `ChatGroq` instance — swappable without touching graph logic |
+
+---
 
 ## Architecture
 
@@ -28,20 +40,11 @@ LangGraph state machine
       └── generate_image ► Pollinations.ai (free image generation)
 ```
 
-## Stack
-
-- **Agent orchestration**: LangGraph (state, conditional routing/reflection loop)
-- **LLM**: Groq (`llama-3.3-70b-versatile`) via `langchain-groq`
-- **Search**: Tavily
-- **Structured output**: Pydantic, via `with_structured_output`
-- **Image generation**: Pollinations.ai (free, no API key)
-- **Backend**: FastAPI
-- **Frontend**: React (Vite)
-- **Deployment**: Docker → Azure Container Registry → Azure Container Apps
+---
 
 ## Repo layout
 
-This was built in incremental phases, kept as separate files to see each concept in isolation:
+Built in incremental phases, kept as separate files to see each concept in isolation rather than one finished script:
 
 - `main.py` — Phase 1: a single Groq LLM call
 - `phase2_tool_call.py` — Phase 2: manual tool calling (LLM decides, we execute, LLM interprets)
@@ -52,14 +55,15 @@ This was built in incremental phases, kept as separate files to see each concept
 - `api.py` — Phase 7: FastAPI wrapper around the graph
 - `frontend/` — Phase 8: React UI
 - `Dockerfile` — Phase 9: containerization
-- Phase 10: deployed to Azure Container Apps (see below)
+
+---
 
 ## Running locally
 
 ```bash
 # Backend
 uv sync
-cp .env.example .env   # then fill in GROQ_API_KEY and TAVILY_API_KEY
+cp .env.example .env   # fill in GROQ_API_KEY and TAVILY_API_KEY
 uv run uvicorn api:api --reload --port 8000
 
 # Frontend (separate terminal)
@@ -77,14 +81,44 @@ docker build -t news-research-agent .
 docker run -d -p 8000:8000 --env-file .env -v "$(pwd)/outputs:/app/outputs" news-research-agent
 ```
 
+---
+
 ## Deployment
 
-**Backend**: Azure Container Apps, backed by Azure Container Registry. Secrets (API keys, storage connection string) are stored as Container App secrets, not baked into the image.
+Deployed as: **Azure Container Apps** (backend, via Azure Container Registry) + **Azure Blob Storage** (persistent image storage, falls back to local disk if unconfigured) + **Azure Static Web Apps** (frontend, static Vite build). Secrets are stored as Container App secrets, never baked into the image.
 
-**Frontend**: Azure Static Web Apps, deployed from the production Vite build (`npm run build` → `dist/`).
+> Cloud resources were torn down after the demo session to control cost (student subscription) — the app is fully reproducible from this repo. Redeploy with: `az group create` → `az acr create` → `az containerapp env create` → `az containerapp create` → `az storage account create` → `az staticwebapp create`, then build/push the image and deploy the frontend build.
 
-**Live URLs**:
-- Frontend: https://lively-smoke-0e85a860f.7.azurestaticapps.net
-- Backend: https://news-research-agent.agreeableriver-806102e7.eastus.azurecontainerapps.io
+---
 
-Generated images are uploaded to Azure Blob Storage (persistent, shared across replicas) whenever `AZURE_STORAGE_CONNECTION_STRING` is set; otherwise the app falls back to writing to a local `outputs/` folder for local development without needing an Azure Storage account.
+## Limitations
+
+- **Free-tier image generation** — Pollinations.ai has no quality/uptime guarantees; text rendered inside images is unreliable, so prompts are constrained to pure visual scenes.
+- **No persistent chat/session history** — each request is stateless; no conversation memory across queries.
+- **Fixed search cap** — `MAX_SEARCHES = 3` is a static safety limit, not an adaptive budget.
+- **No automated tests** — built as a learning project; correctness was verified manually at each phase.
+
+## Roadmap
+
+1. **Monitoring** — Azure Monitor / Application Insights instead of manual log-tailing.
+2. **Key Vault** — move secrets from Container App secrets to centrally managed, rotatable Key Vault references.
+3. **Provider swap** — add Microsoft Foundry as an alternate LLM backend, proving the graph logic is provider-agnostic.
+4. **Automated tests** — unit tests per graph node, integration test for the full `search → analyze → summarize → generate_image` path.
+
+---
+
+## Project Stats
+
+- **6** LangGraph nodes (`search`, `analyze`, `summarize`, `generate_image`, plus routing)
+- **1** conditional edge (reflection-loop routing)
+- **2** external APIs (Tavily search, Pollinations image generation)
+- **1** LLM (`llama-3.3-70b-versatile` via Groq), swappable via a single wrapper
+- **3** deployed Azure services (Container Apps, Blob Storage, Static Web Apps)
+
+## License
+
+[MIT](LICENSE)
+
+---
+
+*Built by [Kaustubha Eluri](https://github.com/Kaustubha-09).*
