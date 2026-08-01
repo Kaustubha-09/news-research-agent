@@ -12,7 +12,10 @@ api = FastAPI(title="News Research Agent")
 # even though curl works fine (curl doesn't enforce CORS, only browsers do).
 api.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "https://lively-smoke-0e85a860f.7.azurestaticapps.net",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
