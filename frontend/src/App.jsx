@@ -66,7 +66,7 @@ function App() {
           </ul>
 
           <img
-            src={`${API_URL}${report.image_url}`}
+            src={report.image_url.startsWith('http') ? report.image_url : `${API_URL}${report.image_url}`}
             alt="Generated infographic"
             style={{ maxWidth: '100%', borderRadius: 8 }}
           />

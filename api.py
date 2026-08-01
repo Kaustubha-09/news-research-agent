@@ -43,7 +43,7 @@ def run_research(request: ResearchRequest):
         "num_searches": 0,
         "verdict": "",
         "report": None,
-        "image_path": None,
+        "image_url": None,
     }
 
     # This is the same .invoke() call from our CLI scripts — the graph
@@ -51,15 +51,14 @@ def run_research(request: ResearchRequest):
     result = research_graph.invoke(initial_state)
     report = result["report"]
 
-    # image_path looks like "outputs/infographic_ab12cd34.png" — we only
-    # want the filename, since StaticFiles serves from that directory root.
-    filename = result["image_path"].split("/")[-1]
-
+    # image_url is either a full https:// Blob Storage URL (when
+    # AZURE_STORAGE_CONNECTION_STRING is set) or a relative "/outputs/..."
+    # path (local dev) — the frontend already knows to use it as-is either way.
     return ResearchResponse(
         headline=report.headline,
         key_developments=report.key_developments,
         sources=report.sources,
-        image_url=f"/outputs/{filename}",
+        image_url=result["image_url"],
         num_searches=result["num_searches"],
     )
 

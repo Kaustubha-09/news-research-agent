@@ -5,6 +5,7 @@ from typing import TypedDict, Optional
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 import requests
+from azure.storage.blob import BlobServiceClient, ContentSettings
 from langchain_groq import ChatGroq
 from langchain_tavily import TavilySearch
 from langgraph.graph import StateGraph, START, END
@@ -16,6 +17,12 @@ llm = ChatGroq(model="llama-3.3-70b-versatile")
 
 MAX_SEARCHES = 3
 OUTPUT_DIR = "outputs"
+BLOB_CONTAINER_NAME = "infographics"
+
+# If this is set (e.g. in the deployed container), images go to Azure Blob
+# Storage — persistent, shared across replicas. If unset (local dev), we
+# fall back to writing to the local outputs/ folder, same as before.
+AZURE_STORAGE_CONNECTION_STRING = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
 
 
 class ResearchReport(BaseModel):
@@ -41,7 +48,7 @@ class ResearchState(TypedDict):
     num_searches: int
     verdict: str
     report: Optional[ResearchReport]
-    image_path: Optional[str]
+    image_url: Optional[str]
 
 
 def search_node(state: ResearchState) -> dict:
@@ -99,13 +106,25 @@ def generate_image_node(state: ResearchState) -> dict:
     response = requests.get(url, timeout=60)
     response.raise_for_status()
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
     filename = f"infographic_{uuid.uuid4().hex[:8]}.png"
-    image_path = os.path.join(OUTPUT_DIR, filename)
-    with open(image_path, "wb") as f:
-        f.write(response.content)
 
-    return {"image_path": image_path}
+    if AZURE_STORAGE_CONNECTION_STRING:
+        blob_service = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
+        blob_client = blob_service.get_blob_client(container=BLOB_CONTAINER_NAME, blob=filename)
+        blob_client.upload_blob(
+            response.content,
+            overwrite=True,
+            content_settings=ContentSettings(content_type="image/png"),
+        )
+        image_url = blob_client.url  # a real, publicly-fetchable https:// URL
+    else:
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        image_path = os.path.join(OUTPUT_DIR, filename)
+        with open(image_path, "wb") as f:
+            f.write(response.content)
+        image_url = f"/outputs/{filename}"  # relative — api.py serves this via StaticFiles
+
+    return {"image_url": image_url}
 
 
 graph = StateGraph(ResearchState)
@@ -134,7 +153,7 @@ if __name__ == "__main__":
         "num_searches": 0,
         "verdict": "",
         "report": None,
-        "image_path": None,
+        "image_url": None,
     }
     result = app.invoke(initial_state)
 
@@ -142,4 +161,4 @@ if __name__ == "__main__":
     print(f"\n--- Ran {result['num_searches']} search round(s) ---")
     print(f"\nHeadline: {report.headline}")
     print(f"Image prompt used: {report.image_prompt}")
-    print(f"\nImage saved to: {result['image_path']}")
+    print(f"\nImage: {result['image_url']}")

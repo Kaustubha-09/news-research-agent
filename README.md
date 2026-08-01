@@ -79,6 +79,6 @@ docker run -d -p 8000:8000 --env-file .env -v "$(pwd)/outputs:/app/outputs" news
 
 ## Deployment
 
-Deployed on Azure Container Apps, backed by Azure Container Registry. Secrets (API keys) are stored as Container App secrets, not baked into the image.
+Deployed on Azure Container Apps, backed by Azure Container Registry. Secrets (API keys, storage connection string) are stored as Container App secrets, not baked into the image.
 
-**Known limitation**: generated images are written to the container's local filesystem, which is ephemeral on Container Apps (lost on restart/scale-down, not shared across replicas). A production version would write to Azure Blob Storage instead.
+Generated images are uploaded to Azure Blob Storage (persistent, shared across replicas) whenever `AZURE_STORAGE_CONNECTION_STRING` is set; otherwise the app falls back to writing to a local `outputs/` folder for local development without needing an Azure Storage account.
