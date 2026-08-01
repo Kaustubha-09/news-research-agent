@@ -79,6 +79,12 @@ docker run -d -p 8000:8000 --env-file .env -v "$(pwd)/outputs:/app/outputs" news
 
 ## Deployment
 
-Deployed on Azure Container Apps, backed by Azure Container Registry. Secrets (API keys, storage connection string) are stored as Container App secrets, not baked into the image.
+**Backend**: Azure Container Apps, backed by Azure Container Registry. Secrets (API keys, storage connection string) are stored as Container App secrets, not baked into the image.
+
+**Frontend**: Azure Static Web Apps, deployed from the production Vite build (`npm run build` → `dist/`).
+
+**Live URLs**:
+- Frontend: https://lively-smoke-0e85a860f.7.azurestaticapps.net
+- Backend: https://news-research-agent.agreeableriver-806102e7.eastus.azurecontainerapps.io
 
 Generated images are uploaded to Azure Blob Storage (persistent, shared across replicas) whenever `AZURE_STORAGE_CONNECTION_STRING` is set; otherwise the app falls back to writing to a local `outputs/` folder for local development without needing an Azure Storage account.
