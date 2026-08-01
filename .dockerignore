@@ -1,0 +1,15 @@
+.venv
+frontend
+outputs
+.env
+.env.example
+.git
+__pycache__
+*.pyc
+phase1*.py
+phase2*.py
+phase3*.py
+phase4*.py
+phase5*.py
+main.py
+README.md
